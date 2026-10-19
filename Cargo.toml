@@ -1,6 +1,6 @@
 [package]
 name = "calculator"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 
@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 # is, CI patches this dependency to the pane-extension folder of the Pane
 # checkout it pins (see .github/workflows/ci.yml), and a local build can
 # patch it the same way.
-pane-extension = "0.1"
+pane-extension = "0.2"
 # As Pane's own guests workspace builds its components: a small component,
 # with no unwinding to carry into the WebAssembly component.
 [profile.release]
