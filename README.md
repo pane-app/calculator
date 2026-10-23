@@ -1,14 +1,35 @@
 # Calculator
 
 The Calculator is one of [Pane](https://github.com/pane-app/pane)'s
-official extensions. Typing an arithmetic expression into Pane's root search
-lists the answer first — `2 + 2`, `2 ^ 10`, `(1 + 2) * 3.5` — and invoking
-the answer copies it to the clipboard.
+official extensions. Typing a calculation into Pane's root search lists
+the answer first — `2 + 2`, `20% of 50`, `5 km in miles`, `days until
+christmas` — and invoking the answer copies it to the clipboard, as it is
+shown; the Actions panel also copies it without its thousands grouped.
 
-It understands numbers, `+ - * / ^`, parentheses and a leading sign, with the
-usual precedence; nothing more, by design (see
-[`src/expression.rs`](src/expression.rs)). It is a *root provider*: the answer
-appears in root search, and the package has no screen of its own.
+It reads what Raycast's calculator reads, offline:
+
+- arithmetic: `+ - * / ^` and `×`, `x`, `÷`, `−`, `mod`, the words (`plus`,
+  `times`, `divided by`), parentheses, a leading sign, `5!`, `5²`, `√16`,
+  and multiplication without a sign (`2pi`, `3(4 + 5)`);
+- numbers as `1,000`, `1e3`, `10k`, `2M`, `0xff`, `0b1010` and `0o17`;
+- constants (`pi`, `e`, `tau`, `phi`) and functions (`sqrt`, `cbrt`, `sin`,
+  `cos`, `tan` and their inverses, `ln`, `log`, `log2`, `exp`, `abs`,
+  `round`, `floor`, `ceil`), in radians unless a unit says degrees;
+- percentages: `20% of 50`, `50 + 10%`, `10% off 50`, `5% on 30`,
+  `10 is what % of 50`, `what % of 50 is 10`, `10 as a % of 50`;
+- units of length, mass, volume, area, time, speed, temperature, data
+  (`MB` is 1000², `MiB` 1024²), angle and CSS pixels, converted with `in`,
+  `to` or `as` (`100 f to c`, `1 GB in MB`, `5 ft 3 in in cm`);
+- number bases: `255 in hex`, `0xff in decimal`, `99 in binary`;
+- dates and times: `now + 3 days`, `35 days ago`, `next monday`,
+  `days until christmas`, `days between 3 march and 30 may`,
+  `time in Tokyo`, `5pm London in New York`, `1700000000 to date`.
+
+[`src/expression.rs`](src/expression.rs), [`src/dates.rs`](src/dates.rs),
+[`src/units.rs`](src/units.rs) and [`src/zones.rs`](src/zones.rs) say
+exactly what each reads. Currencies are not converted: their rates need a
+network. It is a *root provider*: the answer appears in root search, and the
+package has no screen of its own.
 
 This repository holds the extension's whole package, in the one-extension
 shape of [ADR 0044](https://github.com/pane-app/pane/blob/main/docs/adr/0044-a-git-repository-holds-one-extension-or-a-collection.md):
@@ -23,9 +44,9 @@ Install it from Git with Pane alone — no Git, compiler or other tool is
 needed on your computer. In root search, choose **Install extension from
 Git…** and name
 
-    https://github.com/pane-app/calculator@v0.6.1
+    https://github.com/pane-app/calculator@v0.6.2
 
-or, from a terminal, `pane --install git:github.com/pane-app/calculator@v0.6.1`.
+or, from a terminal, `pane --install git:github.com/pane-app/calculator@v0.6.2`.
 A `v<version>` tag pins a release: the tag's commit holds the package
 complete, at the version `pane.json` names. Without a reference, Pane
 installs the default branch, which between releases holds only the source
@@ -56,7 +77,9 @@ cargo build --release --target wasm32-wasip2
 builds `target/wasm32-wasip2/release/calculator.wasm`; copy it to
 `dist/calculator.wasm` for a revision users can install — what the Release
 workflow does. `rust-toolchain.toml` pins the toolchain Pane builds its
-own extensions with.
+own extensions with. `cargo test` runs the calculator's tests on the
+computer that builds it: the language needs neither Pane's SDK nor
+WebAssembly.
 
 The component builds against Pane's Rust SDK,
 [`pane-extension`](https://crates.io/crates/pane-extension), from crates.io

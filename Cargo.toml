@@ -1,6 +1,6 @@
 [package]
 name = "calculator"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 
@@ -8,8 +8,15 @@ license = "Apache-2.0 OR MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Pane's Rust SDK, from crates.io.
+# The maths functions (sin, ln, powers and roots) without the standard
+# library, which the component does without.
+libm = "0.2"
+
+# Pane's Rust SDK, from crates.io, for the component alone: the
+# calculator's language builds and tests without it on any computer.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 pane-extension = "0.2"
+
 # As Pane's own guests workspace builds its components: a small component,
 # with no unwinding to carry into the WebAssembly component.
 [profile.release]
