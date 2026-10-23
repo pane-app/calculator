@@ -190,6 +190,23 @@ pub fn evaluate(query: &str) -> Outcome {
     }
 }
 
+/// The plain number `text` computes, if it computes one with no unit and
+/// no percentage: the amount of a currency conversion (`100`, `1,000`,
+/// `2.5k`, `3 * 40`), which [`crate::currency`] reads with the language's
+/// own numbers and arithmetic.
+pub fn number_of(text: &str) -> Option<f64> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > MAX_LENGTH {
+        return None;
+    }
+    let tokens = tokens(text)?;
+    if tokens.is_empty() {
+        return None;
+    }
+    let (value, _, _) = computed(&tokens).ok()?;
+    (value.is_plain() && value.n.is_finite()).then_some(value.n)
+}
+
 fn outcome(failure: Failure) -> Outcome {
     match failure {
         Failure::Incomplete => Outcome::Incomplete,
