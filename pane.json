@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "title": "Calculator",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "apiVersion": "0.2",
   "icon": "icon.svg",
   "commands": [

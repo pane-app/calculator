@@ -23,13 +23,17 @@ It reads what Raycast's calculator reads, offline:
 - number bases: `255 in hex`, `0xff in decimal`, `99 in binary`;
 - dates and times: `now + 3 days`, `35 days ago`, `next monday`,
   `days until christmas`, `days between 3 march and 30 may`,
-  `time in Tokyo`, `5pm London in New York`, `1700000000 to date`.
+  `time in Tokyo`, `5pm London in New York`, `1700000000 to date`,
+  copied from the Actions panel as ISO 8601 or a Unix timestamp too;
+- colours: `#3aa`, `#FF8800`, `rgb()`, `rgba()`, `hsl()`, `hsla()` and
+  `oklch()`, answered as hex with a swatch and copied as hex, RGB, HSL or
+  OKLCH.
 
 [`src/expression.rs`](src/expression.rs), [`src/dates.rs`](src/dates.rs),
-[`src/units.rs`](src/units.rs) and [`src/zones.rs`](src/zones.rs) say
-exactly what each reads. Currencies are not converted: their rates need a
-network. It is a *root provider*: the answer appears in root search, and the
-package has no screen of its own.
+[`src/units.rs`](src/units.rs), [`src/zones.rs`](src/zones.rs) and
+[`src/colour.rs`](src/colour.rs) say exactly what each reads. Currencies
+are not converted: their rates need a network. It is a *root provider*: the
+answer appears in root search, and the package has no screen of its own.
 
 This repository holds the extension's whole package, in the one-extension
 shape of [ADR 0044](https://github.com/pane-app/pane/blob/main/docs/adr/0044-a-git-repository-holds-one-extension-or-a-collection.md):
@@ -44,9 +48,9 @@ Install it from Git with Pane alone — no Git, compiler or other tool is
 needed on your computer. In root search, choose **Install extension from
 Git…** and name
 
-    https://github.com/pane-app/calculator@v0.6.2
+    https://github.com/pane-app/calculator@v0.6.3
 
-or, from a terminal, `pane --install git:github.com/pane-app/calculator@v0.6.2`.
+or, from a terminal, `pane --install git:github.com/pane-app/calculator@v0.6.3`.
 A `v<version>` tag pins a release: the tag's commit holds the package
 complete, at the version `pane.json` names. Without a reference, Pane
 installs the default branch, which between releases holds only the source
