@@ -55,7 +55,7 @@ fn trimmed(number: &str) -> &str {
 
 /// `text`, a number in plain notation, with commas between its whole
 /// part's groups of three digits.
-fn group(text: &str) -> String {
+pub fn group(text: &str) -> String {
     let (sign, rest) = match text.strip_prefix('-') {
         Some(rest) => ("-", rest),
         None => ("", text),

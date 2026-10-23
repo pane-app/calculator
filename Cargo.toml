@@ -1,6 +1,6 @@
 [package]
 name = "calculator"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 
@@ -12,10 +12,16 @@ crate-type = ["cdylib"]
 # library, which the component does without.
 libm = "0.2"
 
+# The exchange rates' sources answer JSON (src/rates.rs); without the
+# standard library, as the SDK uses it.
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
 # Pane's Rust SDK, from crates.io, for the component alone: the
 # calculator's language builds and tests without it on any computer.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pane-extension = "0.2"
+# The system clock, which the rates' refresh dates its fetches by.
+wasip3 = { version = "=0.9.0", default-features = false }
 
 # As Pane's own guests workspace builds its components: a small component,
 # with no unwinding to carry into the WebAssembly component.

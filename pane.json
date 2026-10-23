@@ -1,17 +1,35 @@
 {
   "manifestVersion": 1,
   "title": "Calculator",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "apiVersion": "0.2",
   "icon": "icon.svg",
+  "preferences": [
+    {
+      "name": "currency",
+      "type": "text",
+      "title": "Your currency",
+      "description": "The currency an amount alone, such as 100 eur, is converted into: a code such as USD, EUR or VND.",
+      "placeholder": "such as USD",
+      "default": "USD"
+    }
+  ],
   "commands": [
     {
       "id": "calculator",
       "title": "Calculator",
-      "subtitle": "Answers calculations, conversions, dates and times typed into root search",
+      "subtitle": "Answers calculations, conversions, currencies, dates and times typed into root search",
       "component": "dist/calculator.wasm",
       "mode": "provider",
       "rootResults": true
+    },
+    {
+      "id": "refresh-rates",
+      "title": "Refresh Currency Rates",
+      "subtitle": "Fetches the exchange rates the calculator converts currencies with",
+      "component": "dist/rates/calculator.wasm",
+      "mode": "no-view",
+      "service": true
     }
   ]
 }
