@@ -1,14 +1,14 @@
 {
   "manifestVersion": 1,
   "title": "Calculator",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "apiVersion": "0.2",
   "icon": "icon.svg",
   "commands": [
     {
       "id": "calculator",
       "title": "Calculator",
-      "subtitle": "Answers arithmetic typed into root search",
+      "subtitle": "Answers calculations, conversions, dates and times typed into root search",
       "component": "dist/calculator.wasm",
       "mode": "provider",
       "rootResults": true

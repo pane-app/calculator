@@ -31,6 +31,9 @@ jobs:
 
       - run: cargo fmt --check
 
+      - name: Test the calculator's language
+        run: cargo test --locked
+
       - name: Build the component
         run: cargo build --release --locked --target wasm32-wasip2
 
