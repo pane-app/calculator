@@ -2,8 +2,8 @@
 //! (pane-app/pane#472), answered from the moment of the query and its
 //! local offset from UTC, offline:
 //!
-//! - `now`, `today`, `tomorrow`, `yesterday`, `next monday`, `last friday`,
-//!   `tomorrow at 5pm`;
+//! - `now`, `time`, `today` (or `date`), `tomorrow`, `yesterday`,
+//!   `next monday`, `last friday`, `tomorrow at 5pm`;
 //! - a date or time and amounts of time added or taken away: `now + 3
 //!   days`, `today - 1 month`, `christmas + 1 week`, `in 3 hours`,
 //!   `3 days from now`, `35 days ago`, `2 weeks after 1 may`,
@@ -21,15 +21,17 @@
 //! `2026-12-25`, a weekday, or `christmas`, `christmas eve`, `new year`,
 //! `new year's eve`, `valentine's day`, `halloween` and `easter`; times as
 //! `5pm`, `5:30 pm`, `17:30`, `noon` and `midnight`. A date without a year
-//! is its next one, or its last one after `since`. Times are written on
-//! the 24-hour clock (`17:05 Fri 23 Oct`), with the year only when it is
-//! not this one; dates always with their year (`Fri 25 Dec 2026`).
+//! is its next one, or its last one after `since`, and a time of day its
+//! next or last one. Answers are in the layout Pane's own dates use
+//! (`Dec 25, 2026`, `Oct 23, 2026, 17:05`; `time` alone is `17:05`), and
+//! the Actions panel copies a moment as ISO 8601 and as a Unix timestamp,
+//! as #196 had them.
 //!
 //! Local time is the query's offset from UTC throughout: an amount of time
 //! that crosses a change to or from daylight saving keeps the offset of
 //! the moment asked at.
 
-use alloc::{format, string::String, vec::Vec};
+use alloc::{format, string::String, vec, vec::Vec};
 
 use crate::zones::{self, Zone};
 use crate::{Answer, Kind, Now, Outcome};
@@ -85,7 +87,6 @@ fn days_in_month(year: i64, month: u32) -> u32 {
     (next - days_from_civil(year, month, 1)) as u32
 }
 
-const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
@@ -247,7 +248,8 @@ pub fn evaluate(query: &str, now: Now) -> Option<Outcome> {
         next: 0,
         now,
     };
-    let forms: [fn(&mut Parser<'_>) -> Option<Reply>; 7] = [
+    let forms: [fn(&mut Parser<'_>) -> Option<Reply>; 8] = [
+        |parser| parser.time_alone(),
         |parser| parser.between(),
         |parser| parser.time_in(),
         |parser| parser.clock_in(),
@@ -266,6 +268,18 @@ pub fn evaluate(query: &str, now: Now) -> Option<Outcome> {
                     text,
                     plain,
                     kind: Kind::DateTime,
+                    swatch: None,
+                    copies: Vec::new(),
+                }),
+                Reply::Moment { text, iso, unix } => Outcome::Answer(Answer {
+                    plain: text.clone(),
+                    text,
+                    kind: Kind::DateTime,
+                    swatch: None,
+                    copies: vec![
+                        ("Copy ISO 8601", iso),
+                        ("Copy Unix timestamp", format!("{unix}")),
+                    ],
                 }),
                 Reply::NotACalculation => Outcome::NotACalculation,
             });
@@ -283,6 +297,13 @@ pub fn evaluate(query: &str, now: Now) -> Option<Outcome> {
 enum Reply {
     /// The answer, as shown and plain.
     Answer(String, String),
+    /// A moment: as shown, and as the ISO 8601 and Unix timestamp the
+    /// Actions panel copies (#196).
+    Moment {
+        text: String,
+        iso: String,
+        unix: i64,
+    },
     NotACalculation,
 }
 
@@ -478,6 +499,25 @@ impl Parser<'_> {
         ))
     }
 
+    /// `time` alone: the time now, shown as the time of day.
+    fn time_alone(&mut self) -> Option<Reply> {
+        if self.tokens.len() != 1 || !self.take("time") {
+            return None;
+        }
+        let Reply::Moment { text, iso, unix } = self.told(Moment {
+            local: self.local_now(),
+            time: true,
+        }) else {
+            return None;
+        };
+        let clock = text.rsplit(", ").next().unwrap_or(&text).into();
+        Some(Reply::Moment {
+            text: clock,
+            iso,
+            unix,
+        })
+    }
+
     /// `time in P`, `now in P`, `time at P`, `what time is it in P`,
     /// `P time`, `time P`.
     fn time_in(&mut self) -> Option<Reply> {
@@ -508,8 +548,14 @@ impl Parser<'_> {
 
     /// The time now in `zone`.
     fn zone_time(&self, zone: Zone) -> Reply {
-        let local = self.now.utc + zone.offset(self.now.utc);
-        Reply::same(self.written(Moment { local, time: true }))
+        let offset = zone.offset(self.now.utc);
+        told(
+            Moment {
+                local: self.now.utc + offset,
+                time: true,
+            },
+            offset,
+        )
     }
 
     /// The place the words from `next` up to `end` name.
@@ -553,11 +599,14 @@ impl Parser<'_> {
         let local = day * DAY + clock;
         let guess = local - offset(from, self.now.utc);
         let utc = local - offset(from, guess);
-        let there = utc + to.offset(utc);
-        Some(Reply::same(self.written(Moment {
-            local: there,
-            time: true,
-        })))
+        let there = to.offset(utc);
+        Some(told(
+            Moment {
+                local: utc + there,
+                time: true,
+            },
+            there,
+        ))
     }
 
     /// A time of day: `5pm`, `17:30`, `5 pm`, `noon`, `midnight`.
@@ -616,10 +665,10 @@ impl Parser<'_> {
             } else {
                 n.checked_mul(1000)?
             };
-            return Some(Reply::same(self.written(Moment {
+            return Some(self.told(Moment {
                 local: utc.checked_add(self.now.offset)?,
                 time: true,
-            })));
+            }));
         }
         let split = (self.next..self.tokens.len())
             .rev()
@@ -654,9 +703,7 @@ impl Parser<'_> {
         let ahead = self.take("in");
         let (count, span) = self.amount()?;
         if ahead {
-            return Some(Reply::same(
-                self.written(self.counted_from(span).plus(count, span)?),
-            ));
+            return Some(self.told(self.counted_from(span).plus(count, span)?));
         }
         let moment = match self.word(0)? {
             "ago" => {
@@ -681,7 +728,7 @@ impl Parser<'_> {
             }
             _ => return None,
         };
-        Some(Reply::same(self.written(moment)))
+        Some(self.told(moment))
     }
 
     /// What an amount of `span` counts from: now for hours and shorter,
@@ -711,7 +758,7 @@ impl Parser<'_> {
         let later = self.today() + 7 * count;
         let monday = later - i64::from((weekday(later) + 6) % 7);
         let day = monday + i64::from((wanted + 6) % 7);
-        Some(Reply::same(self.written(Moment::day(day))))
+        Some(self.told(Moment::day(day)))
     }
 
     /// A moment and the amounts added to or taken from it: `now + 3 days`.
@@ -727,7 +774,7 @@ impl Parser<'_> {
         let changed = sum.next != self.next;
         *self = sum;
         if changed || relative {
-            Some(Reply::same(self.written(moment)))
+            Some(self.told(moment))
         } else {
             Some(Reply::NotACalculation)
         }
@@ -739,7 +786,7 @@ impl Parser<'_> {
             self.tokens.get(start),
             Some(Token::Word(word)) if matches!(
                 word.as_str(),
-                "now" | "today" | "tomorrow" | "yesterday" | "next" | "last" | "this"
+                "now" | "today" | "date" | "tomorrow" | "yesterday" | "next" | "last" | "this"
             )
         )
     }
@@ -798,7 +845,7 @@ impl Parser<'_> {
                     let clock = self.clock()?;
                     return Some(self.at_clock(clock, toward));
                 }
-                "today" => {
+                "today" | "date" => {
                     self.next += 1;
                     today
                 }
@@ -962,26 +1009,54 @@ impl Parser<'_> {
         })
     }
 
-    /// `moment` as the calculator writes it.
-    fn written(&self, moment: Moment) -> String {
-        let days = moment.days();
-        let (year, month, day) = civil_from_days(days);
-        let date = format!(
-            "{} {day} {}",
-            WEEKDAYS[weekday(days) as usize],
-            MONTHS[month as usize - 1]
-        );
-        if !moment.time {
-            return format!("{date} {year}");
-        }
-        let of_day = moment.local.rem_euclid(DAY);
-        let clock = format!("{:02}:{:02}", of_day / HOUR, of_day % HOUR / MINUTE);
-        if year == self.this_year() {
-            format!("{clock} {date}")
-        } else {
-            format!("{clock} {date} {year}")
-        }
+    /// `moment` in local time, as the calculator answers it.
+    fn told(&self, moment: Moment) -> Reply {
+        told(moment, self.now.offset)
     }
+}
+
+/// `moment`, `offset` ahead of UTC, as the calculator answers it: in the
+/// layout Pane's own dates use (`Jun 1, 2025`, `Jun 1, 2025, 14:23`), and
+/// as ISO 8601 (a date, or the moment with its offset) and as a Unix
+/// timestamp (a date's at its midnight) for the Actions panel.
+fn told(moment: Moment, offset: i64) -> Reply {
+    let days = moment.days();
+    let (year, month, day) = civil_from_days(days);
+    let date = format!("{} {day}, {year}", MONTHS[month as usize - 1]);
+    let iso_date = format!("{year:04}-{month:02}-{day:02}");
+    let unix = (moment.local - offset).div_euclid(1000);
+    if !moment.time {
+        return Reply::Moment {
+            text: date,
+            iso: iso_date,
+            unix,
+        };
+    }
+    let of_day = moment.local.rem_euclid(DAY);
+    let (hour, minute, second) = (
+        of_day / HOUR,
+        of_day % HOUR / MINUTE,
+        of_day % MINUTE / 1000,
+    );
+    Reply::Moment {
+        text: format!("{date}, {hour:02}:{minute:02}"),
+        iso: format!(
+            "{iso_date}T{hour:02}:{minute:02}:{second:02}{}",
+            zone(offset)
+        ),
+        unix,
+    }
+}
+
+/// An offset from UTC as ISO 8601 writes it: `Z`, or `+05:30`.
+fn zone(offset: i64) -> String {
+    if offset == 0 {
+        return "Z".into();
+    }
+    let minutes = offset / MINUTE;
+    let sign = if minutes < 0 { '-' } else { '+' };
+    let minutes = minutes.abs();
+    format!("{sign}{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
 /// The day `year`-`month`-`day`, if there is one.
@@ -1112,36 +1187,36 @@ mod tests {
 
     #[test]
     fn today_and_now() {
-        assert_eq!(shown("now"), "16:05 Fri 23 Oct");
-        assert_eq!(shown("today"), "Fri 23 Oct 2026");
-        assert_eq!(shown("Tomorrow"), "Sat 24 Oct 2026");
-        assert_eq!(shown("yesterday"), "Thu 22 Oct 2026");
-        assert_eq!(shown("next monday"), "Mon 26 Oct 2026");
-        assert_eq!(shown("next friday"), "Fri 30 Oct 2026");
-        assert_eq!(shown("last friday"), "Fri 16 Oct 2026");
-        assert_eq!(shown("last monday"), "Mon 19 Oct 2026");
-        assert_eq!(shown("next week"), "Fri 30 Oct 2026");
-        assert_eq!(shown("tomorrow at 5pm"), "17:00 Sat 24 Oct");
-        assert_eq!(shown("tomorrow 9:30"), "09:30 Sat 24 Oct");
+        assert_eq!(shown("now"), "Oct 23, 2026, 16:05");
+        assert_eq!(shown("today"), "Oct 23, 2026");
+        assert_eq!(shown("Tomorrow"), "Oct 24, 2026");
+        assert_eq!(shown("yesterday"), "Oct 22, 2026");
+        assert_eq!(shown("next monday"), "Oct 26, 2026");
+        assert_eq!(shown("next friday"), "Oct 30, 2026");
+        assert_eq!(shown("last friday"), "Oct 16, 2026");
+        assert_eq!(shown("last monday"), "Oct 19, 2026");
+        assert_eq!(shown("next week"), "Oct 30, 2026");
+        assert_eq!(shown("tomorrow at 5pm"), "Oct 24, 2026, 17:00");
+        assert_eq!(shown("tomorrow 9:30"), "Oct 24, 2026, 09:30");
     }
 
     #[test]
     fn amounts_of_time_move_a_moment() {
-        assert_eq!(shown("now + 3 days"), "16:05 Mon 26 Oct");
-        assert_eq!(shown("now+3 days"), "16:05 Mon 26 Oct");
-        assert_eq!(shown("today + 2 weeks"), "Fri 6 Nov 2026");
-        assert_eq!(shown("today - 1 month"), "Wed 23 Sep 2026");
-        assert_eq!(shown("now plus 2 hours"), "18:05 Fri 23 Oct");
-        assert_eq!(shown("christmas + 1 week"), "Fri 1 Jan 2027");
-        assert_eq!(shown("31 jan + 1 month"), "Sun 28 Feb 2027");
-        assert_eq!(shown("in 3 days"), "Mon 26 Oct 2026");
-        assert_eq!(shown("in 3 hours"), "19:05 Fri 23 Oct");
-        assert_eq!(shown("3 days from now"), "Mon 26 Oct 2026");
-        assert_eq!(shown("35 days ago"), "Fri 18 Sep 2026");
-        assert_eq!(shown("a week ago"), "Fri 16 Oct 2026");
-        assert_eq!(shown("2 weeks after 1 may"), "Sat 15 May 2027");
-        assert_eq!(shown("monday in 3 weeks"), "Mon 9 Nov 2026");
-        assert_eq!(shown("1 year ago"), "Thu 23 Oct 2025");
+        assert_eq!(shown("now + 3 days"), "Oct 26, 2026, 16:05");
+        assert_eq!(shown("now+3 days"), "Oct 26, 2026, 16:05");
+        assert_eq!(shown("today + 2 weeks"), "Nov 6, 2026");
+        assert_eq!(shown("today - 1 month"), "Sep 23, 2026");
+        assert_eq!(shown("now plus 2 hours"), "Oct 23, 2026, 18:05");
+        assert_eq!(shown("christmas + 1 week"), "Jan 1, 2027");
+        assert_eq!(shown("31 jan + 1 month"), "Feb 28, 2027");
+        assert_eq!(shown("in 3 days"), "Oct 26, 2026");
+        assert_eq!(shown("in 3 hours"), "Oct 23, 2026, 19:05");
+        assert_eq!(shown("3 days from now"), "Oct 26, 2026");
+        assert_eq!(shown("35 days ago"), "Sep 18, 2026");
+        assert_eq!(shown("a week ago"), "Oct 16, 2026");
+        assert_eq!(shown("2 weeks after 1 may"), "May 15, 2027");
+        assert_eq!(shown("monday in 3 weeks"), "Nov 9, 2026");
+        assert_eq!(shown("1 year ago"), "Oct 23, 2025");
     }
 
     #[test]
@@ -1174,31 +1249,31 @@ mod tests {
 
     #[test]
     fn the_time_in_a_place() {
-        assert_eq!(shown("time in tokyo"), "18:05 Fri 23 Oct");
-        assert_eq!(shown("time in Tokyo"), "18:05 Fri 23 Oct");
-        assert_eq!(shown("tokyo time"), "18:05 Fri 23 Oct");
-        assert_eq!(shown("what time is it in london"), "10:05 Fri 23 Oct");
-        assert_eq!(shown("time in new york"), "05:05 Fri 23 Oct");
-        assert_eq!(shown("now in sydney"), "20:05 Fri 23 Oct");
-        assert_eq!(shown("time in kathmandu"), "14:50 Fri 23 Oct");
-        assert_eq!(shown("time in honolulu"), "23:05 Thu 22 Oct");
+        assert_eq!(shown("time in tokyo"), "Oct 23, 2026, 18:05");
+        assert_eq!(shown("time in Tokyo"), "Oct 23, 2026, 18:05");
+        assert_eq!(shown("tokyo time"), "Oct 23, 2026, 18:05");
+        assert_eq!(shown("what time is it in london"), "Oct 23, 2026, 10:05");
+        assert_eq!(shown("time in new york"), "Oct 23, 2026, 05:05");
+        assert_eq!(shown("now in sydney"), "Oct 23, 2026, 20:05");
+        assert_eq!(shown("time in kathmandu"), "Oct 23, 2026, 14:50");
+        assert_eq!(shown("time in honolulu"), "Oct 22, 2026, 23:05");
         assert_eq!(shown("time in atlantis"), "not a date");
     }
 
     #[test]
     fn a_time_of_day_in_another_place() {
-        assert_eq!(shown("5pm london in new york"), "12:00 Fri 23 Oct");
-        assert_eq!(shown("5pm ldn in sf"), "09:00 Fri 23 Oct");
-        assert_eq!(shown("5 pm in tokyo"), "19:00 Fri 23 Oct");
-        assert_eq!(shown("9am sf to london"), "17:00 Fri 23 Oct");
-        assert_eq!(shown("17:30 tokyo in paris"), "10:30 Fri 23 Oct");
-        assert_eq!(shown("noon in new york"), "01:00 Fri 23 Oct");
+        assert_eq!(shown("5pm london in new york"), "Oct 23, 2026, 12:00");
+        assert_eq!(shown("5pm ldn in sf"), "Oct 23, 2026, 09:00");
+        assert_eq!(shown("5 pm in tokyo"), "Oct 23, 2026, 19:00");
+        assert_eq!(shown("9am sf to london"), "Oct 23, 2026, 17:00");
+        assert_eq!(shown("17:30 tokyo in paris"), "Oct 23, 2026, 10:30");
+        assert_eq!(shown("noon in new york"), "Oct 23, 2026, 01:00");
     }
 
     #[test]
     fn unix_timestamps() {
-        assert_eq!(shown("1700000000 to date"), "05:13 Wed 15 Nov 2023");
-        assert_eq!(shown("1700000000000 to date"), "05:13 Wed 15 Nov 2023");
+        assert_eq!(shown("1700000000 to date"), "Nov 15, 2023, 05:13");
+        assert_eq!(shown("1700000000000 to date"), "Nov 15, 2023, 05:13");
         assert_eq!(shown("now in unix"), "1792746300");
         assert_eq!(shown("unix time"), "1792746300");
         assert_eq!(shown("current timestamp"), "1792746300");
@@ -1211,6 +1286,43 @@ mod tests {
         assert_eq!(shown("25 dec"), "not a calculation");
         assert_eq!(shown("christmas"), "not a calculation");
         assert_eq!(shown("friday"), "not a calculation");
+    }
+
+    #[test]
+    fn time_and_date_alone_answer_now() {
+        assert_eq!(shown("time"), "16:05");
+        assert_eq!(shown("date"), "Oct 23, 2026");
+    }
+
+    #[test]
+    fn a_moment_copies_as_iso_8601_and_a_unix_timestamp() {
+        let copies = |query: &str| match evaluate(query, now()) {
+            Some(Outcome::Answer(answer)) => answer.copies,
+            other => panic!("{query}: {other:?}"),
+        };
+        assert_eq!(
+            copies("now"),
+            vec![
+                ("Copy ISO 8601", "2026-10-23T16:05:00+07:00".into()),
+                ("Copy Unix timestamp", "1792746300".into()),
+            ]
+        );
+        assert_eq!(
+            copies("tomorrow"),
+            vec![
+                ("Copy ISO 8601", "2026-10-24".into()),
+                ("Copy Unix timestamp", "1792774800".into()),
+            ]
+        );
+        assert_eq!(
+            copies("time in tokyo")[0],
+            ("Copy ISO 8601", "2026-10-23T18:05:00+09:00".into())
+        );
+        assert_eq!(
+            copies("time in london")[0],
+            ("Copy ISO 8601", "2026-10-23T10:05:00+01:00".into())
+        );
+        assert!(copies("days until christmas").is_empty());
     }
 
     #[test]
@@ -1236,7 +1348,6 @@ mod tests {
             "hello",
             "2 hours",
             "17",
-            "time",
             "2026-12-25 + 1",
         ] {
             assert!(
@@ -1253,8 +1364,8 @@ mod tests {
             utc: days_from_civil(2026, 1, 15) * DAY + 12 * HOUR,
             offset: 0,
         };
-        assert_eq!(shown_at("time in new york", winter), "07:00 Thu 15 Jan");
-        assert_eq!(shown_at("time in london", winter), "12:00 Thu 15 Jan");
-        assert_eq!(shown_at("time in sydney", winter), "23:00 Thu 15 Jan");
+        assert_eq!(shown_at("time in new york", winter), "Jan 15, 2026, 07:00");
+        assert_eq!(shown_at("time in london", winter), "Jan 15, 2026, 12:00");
+        assert_eq!(shown_at("time in sydney", winter), "Jan 15, 2026, 23:00");
     }
 }

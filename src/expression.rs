@@ -235,6 +235,8 @@ fn answer(value: Value) -> Outcome {
         text,
         plain,
         kind: Kind::Number,
+        swatch: None,
+        copies: Vec::new(),
     })
 }
 
@@ -262,6 +264,8 @@ fn converted(value: Value, target: Target) -> Outcome {
             text,
             plain,
             kind: Kind::Number,
+            swatch: None,
+            copies: Vec::new(),
         })
     };
     match target {
